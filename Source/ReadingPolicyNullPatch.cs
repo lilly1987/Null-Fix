@@ -1,4 +1,3 @@
-
 using System;
 using System.Reflection;
 using HarmonyLib;
@@ -13,29 +12,46 @@ namespace Lilly.NullFix
     [HarmonyPatch]
     internal static class ReadingPolicyNullPatch
     {
-        static MethodBase TargetMethod()
+        private static MethodBase TargetMethod()
         {
-            return AccessTools.Method(
-                typeof(GenTypes),
-                nameof(GenTypes.SameOrSubclassOf),
-                new Type[]
+            // 오류 로그에 표시된 제네릭 오버로드:
+            // GenTypes.SameOrSubclassOf<T>(Type baseType)
+            MethodInfo[] methods = typeof(GenTypes).GetMethods(
+                BindingFlags.Public |
+                BindingFlags.NonPublic |
+                BindingFlags.Static |
+                BindingFlags.Instance);
+
+            foreach (MethodInfo method in methods)
+            {
+                if (method.Name != nameof(GenTypes.SameOrSubclassOf))
+                    continue;
+
+                if (!method.IsGenericMethodDefinition)
+                    continue;
+
+                if (method.GetGenericArguments().Length != 1)
+                    continue;
+
+                ParameterInfo[] parameters = method.GetParameters();
+
+                if (parameters.Length == 1 &&
+                    parameters[0].ParameterType == typeof(Type))
                 {
-                    typeof(Type),
-                    typeof(Type)
+                    return method;
                 }
-            );
+            }
+
+            return null;
         }
 
-        static bool Prefix(
-            Type baseType,
-            Type parentType,
-            ref bool __result)
+        private static bool Prefix(Type baseType, ref bool __result)
         {
-            // 정상적인 타입이면 원래 메서드 실행
-            if (baseType != null && parentType != null)
+            // 정상적인 Type이면 원본 메서드를 실행한다.
+            if (baseType != null)
                 return true;
 
-            // Null 타입이면 상속 관계가 성립하지 않는 것으로 처리
+            // Null Type은 일치하는 하위 타입이 없는 것으로 처리한다.
             __result = false;
             return false;
         }
